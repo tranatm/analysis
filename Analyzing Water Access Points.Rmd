@@ -1,0 +1,159 @@
+---
+title: "Tidy Tuesday - Analyzing water access points in R"
+author: "Andrew Tran"
+date: "2024-03-18"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+# Dataset from Tidy Tuesday project: https://github.com/rfordatascience/tidytuesday/blob/master/data/2021/2021-05-04/readme.md
+
+# Install Packages
+library(tidyverse)
+library(scales)
+library(tidytuesdayR)
+library(countrycode)
+
+theme_set(theme_light())
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r data import}
+
+tt <- tt_load("2021-05-04")
+
+```
+
+```{r data cleaning, echo=FALSE}
+
+library(lubridate)
+
+water <- tt$water %>%
+            filter(!country_name %in% c("Peru", "Dominican Republic", "Timor-Leste"),
+                   !is.na(country_name)) %>% # filtered out data without a country or in peru
+            filter(between(lat_deg, -35, 37),
+                   between(lon_deg, -40, 60)) %>%
+            mutate(report_date = mdy(report_date),
+                   install_year = ifelse(install_year > 2021, NA_real_, install_year)) %>%
+            rename(lat = lat_deg,
+                   lon = lon_deg,
+                   country = country_name) %>%
+            separate(water_tech, c("water_tech", "brand"), sep = " - ", fill = "right")
+
+```
+
+```{r data exploration, echo=FALSE}
+
+# count the number of values for the status id
+water %>%
+  count(status_id)
+# most common status id is yes
+
+# count the number of value for each water source
+water %>%
+  count(water_source, sort = T)
+# most common water source is Borehole
+
+# count the nuymber of values for each water_tech value
+# water tech = system used to transport water
+water %>%
+  count(water_tech, sort = T)
+
+water %>%
+  count(water_source, water_tech, sort = T)
+
+# visualizing the distribution of install years
+water %>%
+  filter(install_year > 1980) %>% # look at recent install years
+  count(install_year) %>%
+  ggplot(aes(install_year, n)) +
+  geom_col()
+
+water %>%
+  count(country, sort = T)
+
+water %>%
+  count(installer, sort = T)
+
+# Pay is a free text column
+water %>%
+  count(pay, sort = T)
+
+water %>%
+  count(status_id, status_id, sort =  T)
+
+```
+
+```{r mapping}
+
+library(ggthemes)
+
+countries <- unique(water$country)
+
+africa_map_data <- map_data("world") %>%
+                      as_tibble() %>%
+                      mutate(continent = countrycode(region, "country.name", "continent")) %>%
+                      filter(continent == "Africa")
+
+water %>%
+  group_by(country) %>%
+  summarise(lat = mean(lat),
+            lon = mean(lon)) %>%
+  ggplot(aes(lon, lat)) +
+  geom_point() +
+  geom_text(aes(label = country), vjust = 1, hjust = 1)
+
+water %>%
+  count(country, sort = TRUE)
+
+water %>%
+  sample_n(50000) %>% #random sample of 50000
+  ggplot(aes(lon, lat)) +
+  geom_polygon(aes(long, lat, group = group), 
+               color = "gray", 
+               fill = "white", 
+               data = africa_map_data,
+               size = .25) + 
+  geom_point(size = .1, alpha = .25) +
+  theme_map()
+
+```
+
+```{r Uganda}
+
+# Wehre are recorded water wells in Uganda
+# Focusing on Uganda
+
+water_uganda <- water %>%
+                  filter(country == "Uganda",
+                         between(lat, -2, 4),
+                         between(lon, 29, 40)) 
+
+water_uganda %>%
+      ggplot(aes(lon, lat, color = status_id)) +
+      borders("world", regions = "Uganda")+ 
+      geom_point(size = .1, alpha = .25) +
+      theme_map() +
+      scale_color_discrete(guide = guide_legend(override.aes = list(size = 2, alpha = 1)))
+```
+
+```{r}
+bbox <- c(left = 29.2, bottom = -2, right = 35, top = 4.2)
+
+uganda_map <- get_stadiamap(bbox, zoom = 9)
+
+ggmap(uganda_map) +
+  geom_point(aes(lon, lat),
+             data = water_uganda, size = .1, alpha = .25)
+
+water_uganda %>%
+  count(water_source, sort = T)
+
+water_uganda %>%
+  count(pay, sort = T)
+
+
+```
+
